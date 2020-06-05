@@ -2,6 +2,24 @@
 #include "stdio.h"
 #include "stdlib.h"
 
+int g_Seed_gen_buf[LFSR_GROUP_NUM]	= {\
+	0x11,0x31,0x51,0x71,0x91,0xB1,0xD1,0xF1,\
+	0x111,0x131,0x151,0x171,0x191,0x1B1,0x1D1,0x1F1,\
+	0x211,0x231,0x251,0x271,0x291,0x2B1,0x2D1,0x2F1,\
+	0x311,0x331,0x351,0x371,0x391,0x3B1,0x3D1,0x3F1
+}; // could configure from files in spike_LFSR_init
+int g_Seed_sca_buf[LFSR_GROUP_NUM]	= {
+	0x00B,0x02B,0x04B,0x06B,0x08B,0x0AB,0x0CB,0x0EB,\
+	0x30B,0x32B,0x34B,0x36B,0x38B,0x3AB,0x3CB,0x3EB,\
+	0x60B,0x62B,0x64B,0x66B,0x68B,0x6AB,0x6CB,0x6EB,\
+	0x930B,0x932B,0x934B,0x936B,0x938B,0x93AB,0x93CB,0x93EB
+}; // could configure from files in spike_LFSR_init
+
+
+void test_rand_16(int*out_pos, int out_len, char *mem_init, int mem_inv); // mem_inv,1:inv process
+void test_rand_16_int(int*out_pos, int out_len, int seed_16, int mem_inv); // mem_inv,1:inv process
+void func_gen_poisson_one(int in_va,char *out_spike,rand_cla * p_LFSR_gen,rand_cla * p_LFSR_sca, int ratio);
+
 rand_cla::rand_cla()
 {
 	int idx;
@@ -24,17 +42,49 @@ rand_cla::~rand_cla()
 
 }
 
-void rand_cla::rand_sta_set(char *mem_16bit)
+void rand_cla::rand_sta_set(char *mem_16bit, int inv_mod)
 {
 	int idx;
-	for(idx=0; idx<rand_len; idx++)
+	if (inv_mod == 0)
 	{
-		rand_mem[idx] = mem_16bit[idx];
+		for(idx=0; idx<rand_len; idx++)
+		{
+			rand_mem[idx] = mem_16bit[idx];
+		}
+	}
+	else
+	{
+		for(idx=0; idx<rand_len; idx++)
+		{
+			rand_mem[idx] = mem_16bit[15-idx];
+		}
 	}
 	pos_cur = 0;
 }
 
-void rand_cla::rand_config_pos(char out_len0, int *out_pos0)
+void rand_cla::rand_sta_set_int(int seed_16bit, int inv_mod) //seed_16bit,  high->bit15, inv_mod:1,high->bit0
+{
+	int idx;
+	if (inv_mod == 0)
+	{
+		for(idx=0; idx<16; idx++)
+		{
+			rand_mem[idx] = (seed_16bit>>idx) & (0x0001);
+		}
+	}
+	else
+	{
+		for(idx=0; idx<16; idx++)
+		{
+			rand_mem[15-idx] = (seed_16bit>>idx) & (0x0001);
+		}
+	}
+	pos_cur = 0;
+	
+}
+
+
+void rand_cla::rand_config_pos(int out_len0, char *out_pos0)
 {
 	int idx;
 	for(idx=0; idx<out_len0; idx++)
@@ -45,7 +95,7 @@ void rand_cla::rand_config_pos(char out_len0, int *out_pos0)
 	pos_cur = 0;
 } 
 
-void rand_cla::rand_pro(char *out_buf)
+void rand_cla::rand_pro(char *rand_out)
 {
 	char bit16,bit14,bit13,bit11;
 	int idx;
@@ -56,45 +106,137 @@ void rand_cla::rand_pro(char *out_buf)
 	bit16 = xor_bit;
 	for(idx=0; idx<out_len; idx++)
 	{
-		out_buf[idx] = rand_mem[(pos_cur + out_pos[idx])&0x0f];
+		out_bit_buf[idx] = rand_mem[(pos_cur + out_pos[idx])&0x0f];
+		rand_out[idx] = out_bit_buf[idx];
 	}
 	
-	rand_mem[(pos_cur+11)&0x0f] = bit11;
-	rand_mem[(pos_cur+13)&0x0f] = bit13;
-	rand_mem[(pos_cur+14)&0x0f] = bit14;
-	rand_mem[(pos_cur+16)&0x0f] = bit16;
-	
 	pos_cur++;
+	rand_mem[(pos_cur+10)&0x0f] = bit11;
+	rand_mem[(pos_cur+12)&0x0f] = bit13;
+	rand_mem[(pos_cur+13)&0x0f] = bit14;
+	rand_mem[(pos_cur+15)&0x0f] = bit16;
+	
 	//if(pos_cur >= rand_len) // rand_len = 16
 	//	pos_cur -= rand_len;
 	pos_cur = pos_cur & 0x0f;
-	
+
 }
 
-void test_rand(void)
+void rand_cla::rand_read_mem_data(int *mem_data, int *out_data) //out_data is the value for Last output
 {
-	rand_cla rand_1;
-	char out_len = 3;
-	int out_pos[3] = {0,2,5};
-	char rand_out[3];
-	char mem_init[16] = {1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0};
-	rand_1.rand_config_pos(out_len,out_pos);
-	rand_1.rand_sta_set(mem_init);
-
+	char mem_buf[16];
 	int idx;
 	for(idx=0; idx<16; idx++)
 	{
-		rand_1.rand_pro(rand_out);
-		// output, print
-		printf("%d,output:%d,%d,%d\n",idx,rand_out[out_pos[0]],rand_out[out_pos[1]],rand_out[out_pos[2]]);
+		mem_buf[idx] = rand_mem[(pos_cur+idx)&0x0f];
 	}
-	printf("rand test end\n");
+
+	*mem_data = func_val_pos_2int(mem_buf, 16);
+	*out_data = func_val_pos_2int(out_bit_buf, out_len); // using old output value for last out
+
+}
+
+
+int func_val_pos_2int(char * va, int len)
+{
+	int sum0 = 0;
+	int idx;
+	if ((len <0) || (len > 16)) // 0 <= len <= 16
+	{
+		printf("Error In func_val_pos_2int, len should in [0,16], now is %d, debug\n",len);
+		return 0;
+	}
+
+	for(idx=0; idx<len; idx++)
+	{
+		sum0 += (((int)va[idx])<<idx);
+	}
+	return sum0;
+}
+
+void test_rand_16(char*out_pos, int out_len, char *p_mem_in, int mem_inv)
+{
+	rand_cla rand_1;
+	char rand_out[16];
+	int mem_data,pos_data;
+
+	int idx;
+
+	rand_1.rand_config_pos(out_len,out_pos);
+	rand_1.rand_sta_set(p_mem_in,mem_inv);
+
+	for(idx=0; idx<16; idx++)
+	{
+		rand_1.rand_pro(rand_out);
+		rand_1.rand_read_mem_data(&mem_data, &pos_data);
+		// output, print
+		printf("Idx %d,output:%d,%d,%d, As %0X, Inner:%0X, using Decimal:%d,%d\n",idx,rand_out[0],rand_out[1],rand_out[2],\
+		func_val_pos_2int(rand_out, out_len),mem_data,func_val_pos_2int(rand_out, out_len),mem_data);
+	}
+
+}
+
+void test_rand_16_int(char*out_pos, int out_len, int seed_16, int mem_inv)
+{
+	rand_cla rand_1;
+	char rand_out[16];
+	int mem_data,pos_data;
+
+	int idx;
+
+	rand_1.rand_config_pos(out_len,out_pos);
+	rand_1.rand_sta_set_int(seed_16,mem_inv);
+
+	for(idx=0; idx<16; idx++)
+	{
+		rand_1.rand_pro(rand_out);
+		rand_1.rand_read_mem_data(&mem_data, &pos_data);
+		// output, print
+		printf("Idx %d,output:%d,%d,%d, As %0X, Inner:%0X, using Decimal:%d,%d\n",idx,rand_out[0],rand_out[1],rand_out[2],\
+		func_val_pos_2int(rand_out, out_len),mem_data,func_val_pos_2int(rand_out, out_len),mem_data);
+	}
+
+}
+
+
+void test_rand(void)
+{
+	char out_pos[5] = {10,11,12,13,14};
+	int out_len = 5;
+//	char mem_init[16] = {1, 0, 1, 1, 0, 1, 1, 0, 1, 0, 1, 0, 1, 0, 0, 1};
+	char mem_init_inv[16] = {1, 0, 1, 1, 0, 1, 1, 0, 1, 0, 1, 0, 1, 0, 0, 1};
+
+	int seed_16 = 0x0B6A9;
+	
+	test_rand_16(out_pos, out_len, mem_init_inv, 1);
+	printf("rand test-1 end\n");
+	
+	test_rand_16_int(out_pos, out_len, seed_16, 0);
+	printf("rand test-1 seed input end\n");
+
+
+	char out_pos2[8] = {8,9,10,11,12,13,14,15};
+	out_len = 8;
+	
+//	char mem_init2[16] = {0, 1, 1, 1, 0, 0, 1, 0, 0, 1, 0, 1, 1, 1, 1, 0};
+	char mem_init_inv2[16] = {0, 1, 1, 1, 0, 0, 1, 0, 0, 1, 0, 1, 1, 1, 1, 0};
+	seed_16 = 0x725E;
+
+	test_rand_16(out_pos2, out_len, mem_init_inv2, 1);
+
+	printf("rand test-2 end\n");
+	
+	test_rand_16_int(out_pos2, out_len, seed_16, 0);
+
+	printf("rand test-2 seed input end\n");
 
 }
 
 Spike_generator::Spike_generator()
 {
-
+	group_LFSR 		= LFSR_GROUP_NUM;
+	lut_len			= 50;
+	poisson_ratio 	= 0; // ignore ratio
 }
 
 Spike_generator::~Spike_generator()
@@ -126,9 +268,78 @@ int Spike_generator::spike_gen_init(void)
 		}
 	}
 	fclose(fp);
+
+	spike_LFSR_init(); // for Possion LFSR
+	
 	return 0;
 }
 
+void Spike_generator::spike_poisson_set_ration(int ratio) // set poisson_ratio, 8bit, 0 as no effect
+{
+	if ((ratio <0 ) || (ratio > 127))
+	{
+		printf("Error in spike_poisson_set_ration, value should be [0,127], now is %d, debug\n",ratio);
+		ratio = 0;
+	}
+	poisson_ratio = ratio;
+}
+
+int Spike_generator::spike_LFSR_init(void)
+{
+	// first, LFSR seed init
+//	int seed_gen_buf[LFSR_GROUP_NUM] 	= {};
+//	int seed_sca_buf[LFSR_GROUP_NUM] 	= {};
+
+	// output position 
+	char out_pos_gen_buf[5] = {10,11,12,13,14};
+	char out_pos_sca_buf[8] = {8,9,10,11,12,13,14,15};
+	int out_gen_len = 5;
+	int out_sca_len = 8;
+	int ratio		 = 0; // poisson ratio
+
+	int idx;
+	
+	group_LFSR = LFSR_GROUP_NUM;
+
+	spike_poisson_set_ration(ratio);
+	
+	for(idx=0; idx<LFSR_GROUP_NUM; idx++)
+	{
+		spike_LFSR_init_set_int(&LFSR_gen_buf[idx], g_Seed_gen_buf[idx], out_pos_gen_buf, out_gen_len, 0);
+		spike_LFSR_init_set_int(&LFSR_sca_buf[idx], g_Seed_sca_buf[idx], out_pos_sca_buf, out_sca_len, 0);
+
+	}
+
+	return 0;
+}
+
+
+
+void Spike_generator::spike_LFSR_init_set(rand_cla *p_rand_cla, char *seed_16buf, char *out_pos_buf, int out_len, int seed_inv)
+{
+	if ((out_len <0) || (out_len > 16))
+	{
+		printf("Error in spike_LFSR_init_set, out_len should be in [0,16], now is %d, Debug\n",out_len);
+		exit(0);
+	}
+
+	p_rand_cla->rand_config_pos(out_len,out_pos_buf);
+	p_rand_cla->rand_sta_set(seed_16buf,seed_inv);
+
+}
+
+void Spike_generator::spike_LFSR_init_set_int(rand_cla *p_rand_cla, int seed_16bit, char *out_pos_buf, int out_len, int seed_inv)
+{
+	if ((out_len <0) || (out_len > 16))
+	{
+		printf("Error in spike_LFSR_init_set, out_len should be in [0,16], now is %d, Debug\n",out_len);
+		exit(0);
+	}
+
+	p_rand_cla->rand_config_pos(out_len,out_pos_buf);
+	p_rand_cla->rand_sta_set_int(seed_16bit,seed_inv);
+
+}
 
 void Spike_generator::spike_gen_one(int *in_va_buf,char *out_spike_buf,int tidx, uLint_t spike_len0)
 {
@@ -141,7 +352,26 @@ void Spike_generator::spike_gen_one(int *in_va_buf,char *out_spike_buf,int tidx,
 	}
 }
 
-void Spike_generator::spike_gen_one(float *in_va_buf,char *out_spike_buf,int tidx, uLint_t spike_len0)
+void Spike_generator::spike_gen_poisson_one(int *in_va_buf,char *out_spike_buf,int tidx, uLint_t spike_len0)
+{
+	uLint_t idx;
+	int group_idx;
+	int in_va;
+	
+	for(idx =0,group_idx=0; idx<spike_len0; idx++)
+	{
+		in_va = in_va_buf[idx];
+		func_gen_poisson_one(in_va,&out_spike_buf[idx],&LFSR_gen_buf[group_idx],&LFSR_sca_buf[group_idx], poisson_ratio);
+
+		group_idx++;
+		if(group_idx >= group_LFSR)
+			group_idx = 0;
+	}
+
+}
+
+
+void Spike_generator::spike_gen_onef(float *in_va_buf,char *out_spike_buf,int tidx, uLint_t spike_len0)
 {
 	uLint_t idx;
 	char *p_in;
@@ -160,7 +390,7 @@ void Spike_generator::spike_gen_one(float *in_va_buf,char *out_spike_buf,int tid
 void test_spike_gen(void)
 {
 	Spike_generator test_spike_gen;
-	int slen = 8;
+	int slen = 50;
 	int in_va_buf[8] = {10,20,40,60,80,120,160,230};
 	char ou_spike_buf[8];
 	if (0 != test_spike_gen.spike_gen_init())
@@ -178,8 +408,44 @@ void test_spike_gen(void)
 		}
 		printf("\n");
 	}
-	printf("Spike-Generator test End\n");
+	printf("Spike-Generator Now using Poisson \n");
+
+	int poi_ratio = 13;  // 10%*128=13
+	test_spike_gen.spike_poisson_set_ration(poi_ratio);
+	for(int idx=0; idx<20; idx++)
+	{
+		printf("Spike-Generator, time=%d,[in*256,out] ",idx);
+		test_spike_gen.spike_gen_poisson_one(in_va_buf,ou_spike_buf,idx, slen);
+		for(int sidx=0; sidx<slen; sidx++)
+		{
+			printf(",[%d,%d]",in_va_buf[sidx],ou_spike_buf[sidx]);
+		}
+		printf("\n");
+	}	
+	printf("Spike-Generator Poisson test End\n");
 }
+
+void func_gen_poisson_one(int in_va,char *out_spike,rand_cla * p_LFSR_gen,rand_cla * p_LFSR_sca, int ratio)
+{
+	char rand_gen[16]; // 5bit
+	char rand_sca[16]; // 8bit
+	int rand_gen_data;
+	int rand_sca_data;
+	p_LFSR_gen->rand_pro(rand_gen);
+	rand_gen_data = func_val_pos_2int(rand_gen, p_LFSR_gen->out_len);
+	p_LFSR_sca->rand_pro(rand_sca);
+	rand_sca_data = func_val_pos_2int(rand_sca, p_LFSR_sca->out_len);
+
+	if ((rand_gen_data<= in_va) && (ratio <= rand_sca_data))
+	{
+		*out_spike = 1;
+	}
+	else
+	{
+		*out_spike = 0;
+	}
+}
+
 
 void func_fcn_process(void)
 {

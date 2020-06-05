@@ -13,8 +13,7 @@ char g_InSpikeOne[TEST_MAP_MAX_SIZE];
 
 Spike_generator 	g_spike_generator;
 
-//extern FILE * fp_deb_spike_fcn;
-extern FILE * fp_deb_spike_cnn;
+
 int main(void)
 {
 
