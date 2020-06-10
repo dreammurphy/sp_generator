@@ -52,9 +52,11 @@ class Spike_generator
 		void spike_LFSR_init_set(rand_cla *p_rand_cla, char *seed_16buf, char *out_pos_buf, int out_len, int seed_inv);
 		void spike_LFSR_init_set_int(rand_cla *p_rand_cla, int seed_16bit, char *out_pos_buf, int out_len, int seed_inv);
 		
-		void spike_gen_one(int *in_va_buf,char *out_spike_buf,int tidx, uLint_t spike_len0);
-		void spike_gen_onef(float *in_va_buf,char *out_spike_buf,int tidx, uLint_t spike_len0);
+		void spike_gen_one(void *in_va_buf,char *out_spike_buf,int tidx, uLint_t spike_len0);
+		void spike_gen_lut_one(int *in_va_buf,char *out_spike_buf,int tidx, uLint_t spike_len0);
+		void spike_gen_lut_onef(float *in_va_buf,char *out_spike_buf,int tidx, uLint_t spike_len0);
 		void spike_gen_poisson_one(int *in_va_buf,char *out_spike_buf,int tidx, uLint_t spike_len0);
+		void spike_gen_poisson_onef(float *in_va_buf,char *out_spike_buf,int tidx, uLint_t spike_len0);
 
 
 };

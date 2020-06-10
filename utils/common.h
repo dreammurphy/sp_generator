@@ -7,7 +7,8 @@
 
 // #define NULL						(0) //defined in stdio.h
 
-#define SPIKE_MODE_SEL					2 //0:fix, 1:random 2, ahead
+#define SPIKE_MODE_SEL					1 //0:fix, 1:spike-generator 2, ahead
+#define SPIKE_GENE_SEL					4 //0:fix, 1:lut-int 2, lut-float, 3,poisson-int 4,poisson-float
 #define CASE_TEST						2 // 0:XOR, 1:MNIST,FCN 2:MNIST CNN
 #define CASE_DEBUG						0 // 1:debug
 

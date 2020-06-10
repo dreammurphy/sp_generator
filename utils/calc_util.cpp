@@ -341,7 +341,37 @@ void Spike_generator::spike_LFSR_init_set_int(rand_cla *p_rand_cla, int seed_16b
 
 }
 
-void Spike_generator::spike_gen_one(int *in_va_buf,char *out_spike_buf,int tidx, uLint_t spike_len0)
+void Spike_generator::spike_gen_one(void *in_va_buf,char *out_spike_buf,int tidx, uLint_t spike_len0)
+{
+	int *p_in = (int *)in_va_buf;
+	float *p_if = (float *)in_va_buf;
+	switch (SPIKE_GENE_SEL)
+	{
+		case 0:
+		case 1:
+			spike_gen_lut_one(p_in,out_spike_buf,tidx, spike_len0);
+			break;
+			
+		case 2:
+			spike_gen_lut_onef(p_if,out_spike_buf,tidx, spike_len0);
+			break;	
+			
+		case 3:
+			spike_gen_poisson_one(p_in,out_spike_buf,tidx, spike_len0);
+			break;	
+			
+		case 4:
+			spike_gen_poisson_onef(p_if,out_spike_buf,tidx, spike_len0);
+			break;	
+			
+		default:
+			spike_gen_lut_onef(p_if,out_spike_buf,tidx, spike_len0);
+			break;
+	}
+
+}
+
+void Spike_generator::spike_gen_lut_one(int *in_va_buf,char *out_spike_buf,int tidx, uLint_t spike_len0)
 {
 	uLint_t idx;
 	char *p_in;
@@ -351,6 +381,7 @@ void Spike_generator::spike_gen_one(int *in_va_buf,char *out_spike_buf,int tidx,
 		out_spike_buf[idx] = p_in[in_va_buf[idx]];
 	}
 }
+
 
 void Spike_generator::spike_gen_poisson_one(int *in_va_buf,char *out_spike_buf,int tidx, uLint_t spike_len0)
 {
@@ -371,7 +402,7 @@ void Spike_generator::spike_gen_poisson_one(int *in_va_buf,char *out_spike_buf,i
 }
 
 
-void Spike_generator::spike_gen_onef(float *in_va_buf,char *out_spike_buf,int tidx, uLint_t spike_len0)
+void Spike_generator::spike_gen_lut_onef(float *in_va_buf,char *out_spike_buf,int tidx, uLint_t spike_len0)
 {
 	uLint_t idx;
 	char *p_in;
@@ -385,6 +416,24 @@ void Spike_generator::spike_gen_onef(float *in_va_buf,char *out_spike_buf,int ti
 
 		out_spike_buf[idx] = p_in[in_idx];
 	}
+}
+
+void Spike_generator::spike_gen_poisson_onef(float *in_va_buf,char *out_spike_buf,int tidx, uLint_t spike_len0)
+{
+	uLint_t idx;
+	int group_idx;
+	int in_va;
+	
+	for(idx =0,group_idx=0; idx<spike_len0; idx++)
+	{
+		in_va = int(in_va_buf[idx]*256);
+		func_gen_poisson_one(in_va,&out_spike_buf[idx],&LFSR_gen_buf[group_idx],&LFSR_sca_buf[group_idx], poisson_ratio);
+
+		group_idx++;
+		if(group_idx >= group_LFSR)
+			group_idx = 0;
+	}
+
 }
 
 void test_spike_gen(void)
