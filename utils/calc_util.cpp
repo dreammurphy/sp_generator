@@ -988,4 +988,61 @@ void func_find_max(float *in, uLint_t n, uLint_t *midx, float* max_va)
 	
 }
 
+// inX:[ci][x][y], p_wei:one weight buffer after re-organize, while inX should also be organized, 
+// here, get n_group results, each have n coef, total inX: n*n_group, while, p_wei only n elements
+// for this, n=8, n_group=4, 
+// note: inX[n_group][n], p_wei[n]; outX shold be set to 0 if it's the first time to calculate
+void func_neuron_one_unit(char *inX, float*p_wei, float *outX, int n, int n_group)
+{
+	int gidx, nidx;
+	float sum0;
+	char * p_in;
+	
+	p_in = inX;
+	for(gidx=0; gidx<n_group; gidx++)
+	{
+		sum0 = outX[gidx];
+		for(nidx=0; nidx<n; nidx++)
+		{
+			if (p_in[nidx] != 0)
+				sum0 += p_wei[n];
+		}
+		outX[gidx] = sum0;
+		p_in += n;
+	}
+}
+
+// func_neuron_one_kx, same as func_neuron_one_unit; kernel not change, while support more n_group
+// if more detail, n_group should be sliced every 4 groups as in func_neuron_one_unit
+// stride = 1, not take the stride into accout,
+void func_neuron_one_kx(char *inX, float*p_wei, float *outX, int n, int n_group)
+{
+	func_neuron_one_unit(inX, p_wei, outX, n, n_group);
+	
+}
+
+// func_neuron_whole_kx, fix channel_in direction, and loop the kx, while support more n_group
+// stride = 1, not take the stride into accout,
+// note, kernel weight buffer have been re-organized
+void func_neuron_whole_kx(char *inX, float*p_wei, float *outX, int n, int n_group, int kx)
+{
+	int kxidx;
+	float *p_wei_in;
+	char *p_in;
+	float *p_ou;
+	
+	p_in = inX;
+	p_ou = outX;
+	p_wei_in = p_wei;
+	
+	ASSERT(kx-n_group,"func_neuron_whole_kx");
+
+	for (kxidx =0; kxidx < kx; kxidx++)
+	{
+		func_neuron_one_unit(p_in, p_wei_in, p_ou, n, n_group-kxidx);
+		p_in += n;
+		p_wei_in += n;
+	}
+	
+}
 

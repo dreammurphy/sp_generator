@@ -5,6 +5,18 @@
 #include "stdio.h"
 #include "stdlib.h"
 
+#define ASSERT_DEBUG
+#ifdef ASSERT_DEBUG
+#define ASSERT(cond,pr_str) {if (cond) printf("Shold Not Occur this, do debug");}
+#else
+#define ASSERT(cond,pr_str)  {}
+#endif
+
+#define SUCCESS						(1)
+#define FAIL						(0)
+#define TRUE						(1)
+#define FALSE						(0)
+
 // #define NULL						(0) //defined in stdio.h
 
 #define SPIKE_MODE_SEL					1 //0:fix, 1:spike-generator 2, ahead
