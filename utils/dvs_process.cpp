@@ -1,8 +1,8 @@
 
 #include "dvs_process.h"
 
-char g_dvs_in_name[] 	= "mnist_0_scale04_0001.aedat";
-char g_dvs_out_name[]  = "dvs_test_data_out.txt";
+char g_dvs_in_name[] 	= "./data/mnist_0_scale04_0001.aedat";
+char g_dvs_out_name[]  = "./data/dvs_test_data_out.txt";
 
 
 
@@ -141,6 +141,9 @@ int dvs_processor_cla::dvs_2_frame_process(int *res_buf)
 	
 	time_end = dvs_time_start + dvs_time_period;
 	time_cur = dvs_time_start;
+
+	printf(" Time Start:%d, Time End Needed:%d",dvs_time_start,time_end);
+	
 	dvs_event_cnt = 0;
 	
 	p_pic = &dvs_picture[0]; // 0:the first channel of picture, 0*pic_size_one
@@ -175,7 +178,10 @@ int dvs_processor_cla::dvs_2_frame_process(int *res_buf)
 		}
 	}
 	dvs_time_start = time_cur; // update latest time.
+
 	
+	printf(" Time Real End:%d, save event-number is %d\n",dvs_time_start,dvs_event_cnt);
+
 	if (dvs_event_cnt <= 0)
 	{
 		return FAIL;
@@ -203,16 +209,20 @@ void test_dvs2frame(void) // an example
 	int data_src_mod;
 	
 	char *fname = g_dvs_in_name;
-	char *fout  = g_dvs_out_name;
+	char fout[128];
+	int file_cnt;
+	int file_len;
+	file_len = sizeof(g_dvs_out_name);
+	memcpy(fout, g_dvs_out_name,file_len);
 	
 	int * p_dvs_frame_buf;
-	uLint_t sidx; // for save
+	int sidx; // for save
 	FILE *fp_save;
 
 	size_x = 128;
 	size_y = 128;
 	size_c = 1;
-	time_period = 200;
+	time_period = 20000; //2000;
 	event_max = 200;
 	fail_time_max = 2;
 	data_src_mod  = 0; // from file
@@ -241,17 +251,8 @@ void test_dvs2frame(void) // an example
 	p_test_dvs->dvs_pro_set_event_source(data_src_mod, fname, strlen(fname)); // 0:file
 
 
-	// Process and save
-	fp_save = fopen(fout,"w");
-	if (NULL == fp_save)
-	{
-		printf("In test_dvs2frame, could open file:%s, debug\n",fout);
-		
-		FREE_POINT(p_test_dvs);
-		FREE_POINT(p_dvs_frame_buf);
-		return;
-	}
-	
+
+	file_cnt = 0;
 	while(1)
 	{
 		int *px, *py;
@@ -259,6 +260,21 @@ void test_dvs2frame(void) // an example
 		if (SUCCESS == (p_test_dvs->dvs_2_frame_process(p_dvs_frame_buf)))
 		{
 			// save to file
+			// Process and save
+			sprintf(&fout[file_len-1],"_%d",file_cnt);
+			file_cnt++;
+			
+			printf("Save to %s\n",fout);
+			fp_save = fopen(fout,"w");
+			if (NULL == fp_save)
+			{
+				printf("In test_dvs2frame, could open file:%s, debug\n",fout);
+				
+				FREE_POINT(p_test_dvs);
+				FREE_POINT(p_dvs_frame_buf);
+				return;
+			}
+
 			px = p_dvs_frame_buf;
 			for(sidx = 0; sidx<size_x; sidx++)
 			{	
@@ -270,6 +286,14 @@ void test_dvs2frame(void) // an example
 				}
 				fprintf(fp_save,"\n");
 			}
+			fclose(fp_save);
+
+			// for debug
+			if (file_cnt >= 200)
+			{
+				printf("\nIn test_dvs2frame debug, end process\n");
+				break;
+			}
 		}
 		else
 		{
@@ -277,7 +301,7 @@ void test_dvs2frame(void) // an example
 		}
 	}
 	
-	fclose(fp_save);
+//	fclose(fp_save);
 	
 	FREE_POINT(p_test_dvs);
 	FREE_POINT(p_dvs_frame_buf);

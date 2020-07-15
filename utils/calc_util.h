@@ -62,6 +62,29 @@ class Spike_generator
 };
 
 
+class neu_unit_para
+{
+	public:
+			
+		int init_flg;
+		LayerType neu_type;  // CNN,FCN,Pooling?
+		int calc_;
+		str_calc_para unit_calc_para;
+		int calc_n, calc_group, calc_ki; // here, using calc_n=8,  calc_group=4, for calculate 4 results using 32 MAC
+		uLint_t *p_organize_tbl;
+		uLint_t calc_time_count;			// counter as time used for this neuron process whole size
+		
+		
+	public:
+		neu_unit_para();
+		~neu_unit_para();
+		void neu_unit_para_int(void);
+		void neu_unit_set_para(str_calc_para *p_para);
+		
+} ;
+
+
+
 void test_rand(void);
 void test_spike_gen(void);
 int func_val_pos_2int(char * va, int len);

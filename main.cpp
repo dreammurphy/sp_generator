@@ -5,6 +5,7 @@
 
 #include "calc_util.h"
 
+#include "dvs_process.h"
 
 float g_InBuffer[TEST_MAP_MAX_SIZE];
 int g_IdeaBuffer[TEST_LABEL_OUT_MAX_SIZE]; // as Ideal res
@@ -28,6 +29,9 @@ int main(void)
     
 	test_rand();
 	test_spike_gen();
+
+	// test dvs2frame
+	test_dvs2frame();
 
 	printf("Simu End! \n");
 	

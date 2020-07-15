@@ -9,7 +9,12 @@
 #include <pthread.h>
 #endif
 
+#ifndef HAS_ASYNC_THREAD
+
+#else
 static bool bThreadExit = false;
+#endif
+
 
 #ifdef _WIN32
 CRITICAL_SECTION queuelock;
@@ -25,6 +30,9 @@ struct param_dvseg {
 #ifndef HAS_ASYNC_THREAD
 struct param_dvseg gctx_param;
 
+#define Sleep(a) {};
+#define usleep(a) {};
+
 FILE* fp;
 int curevnetcnt = 0;
 int eventnum = 0;
@@ -36,7 +44,7 @@ void init_dvsEventGen(char* filename, bool bloop)
 	gctx_param.bloop = bloop;
 
 	//open the file
-	bool ret = 0;
+//	bool ret = 0;
 
 
 	//open file and skip the head info

@@ -18,6 +18,7 @@ LDFLAGS	 = -m64 -static
 #定义输出文件名
 target = main.exe
 TARGET = main.exe
+TARGETP = mainp.exe
 
 #定义根目录
 objdir = obj
@@ -84,7 +85,7 @@ $(TARGET): $(OBJFILE)
 #include $(alldep)
 #endif
 	
-.PHONY : clean
+.PHONY : clean：p
 clean:
 	@echo $(OBJFILE)
 #	@-del -rf $(TARGET)
@@ -93,3 +94,8 @@ clean:
 	del *.o
 	del utils\*.o
 	@echo clean done.
+p:$(TARGETP)
+	
+$(TARGETP): $(OBJFILE)
+#	$(LINK) $^ $(LIBS) -Wall -fPIC -shared -o $@
+	$(LINK) $^  -Wall -o -pg -lc $@

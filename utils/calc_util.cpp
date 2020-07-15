@@ -1039,10 +1039,283 @@ void func_neuron_whole_kx(char *inX, float*p_wei, float *outX, int n, int n_grou
 
 	for (kxidx =0; kxidx < kx; kxidx++)
 	{
-		func_neuron_one_unit(p_in, p_wei_in, p_ou, n, n_group-kxidx);
+		func_neuron_one_kx(p_in, p_wei_in, p_ou, n, (n_group - kxidx));
 		p_in += n;
 		p_wei_in += n;
 	}
 	
 }
+
+// func_neuron_whole_kxi, fix channel_in direction, and loop the kx, the loop the ki 
+// stride = 1, not take the stride into accout,
+// note, kernel weight buffer have been re-organized,i.e., weight[ki/n][kx][n], inX[ki/n][x][n]
+void func_neuron_whole_kxi(char *inX, float*p_wei, float *outX, int n, int n_group, int kx, int ki)
+{
+	int kidx;
+	float *p_wei_in;
+	char *p_in;
+	float *p_ou;
+	int xmap,wmap;
+	
+	p_in = inX;
+	p_ou = outX;
+	p_wei_in = p_wei;
+	xmap = n*n_group;
+	wmap = n*kx;
+	
+	ASSERT(kx-n_group,"func_neuron_whole_kxi");
+
+	for (kidx =0; kidx < ki; kidx++)
+	{
+		func_neuron_whole_kx(p_in, p_wei_in, p_ou, n, n_group,kx);
+		p_in += xmap;
+		p_wei_in += wmap;
+	}
+	
+}
+
+
+// func_neuron_whole_kxiy, fix channel_in direction, and loop the kx, the loop the ki , finally the ky
+// stride = 1, not take the stride into accout,
+// note, kernel weight buffer have been re-organized,i.e., weight[ky][ki/n][kx][n], inX[ky][ki/n][x][n]
+void func_neuron_whole_kxiy(char *inX, float*p_wei, float *outX, int n, int n_group, int kx, int ki, int ky)
+{
+	int kidx;
+	float *p_wei_in;
+	char *p_in;
+	float *p_ou;
+	int xmap,wmap;
+	
+	p_in = inX;
+	p_ou = outX;
+	p_wei_in = p_wei;
+	xmap = n*n_group*ki;
+	wmap = n*kx*ki;
+	
+	ASSERT(kx-n_group,"func_neuron_whole_kxiy");
+
+	for (kidx =0; kidx < ky; kidx++)
+	{
+		func_neuron_whole_kxi(p_in, p_wei_in, p_ou, n, n_group,kx,ki);
+		p_in += xmap;
+		p_wei_in += wmap;
+	}
+}
+
+// func_neuron_whole_oxy, first one x-axis, then loop the y-axis,
+// stride = 1, not take the stride into accout,
+// note, kernel weight buffer have been re-organized,i.e., weight[ky][ki/n][kx][n], inX[ky][ki/n][x][n]
+// out:[oy][ox], parameters in struct str_calc_para, including, kx,ki,ky,ox,oy,mod:0,valid,1,same,2,0
+// note, the output is [ko][oy][ox], not [oy][ko/n][ox][n],?? if as next cnn. but if fcn, then?
+// So, after using this function, should using re-arrange to do next calculation
+// ? normally, inX:[ki][y][x], weight[co][ki][ky][kx]; or [ki][x][y], inX same as weight
+// Also, should init the outX first outside this function
+void func_neuron_whole_oxy(char *inX, float*p_wei, float *outX, neu_unit_para *p_para)
+{
+	int kidx,oyidx;
+//	int oxidx;
+	float *p_wei_in, *p_wei_co;
+	char *p_in, *p_in_y;
+	float *p_ou, *p_ou_xy;
+	int xmap,wmap;
+	int n, n_group, kx, ki, ky, ko, Ox,Oy, Ix;
+//	int Iy;
+	n = p_para->calc_n;
+	n_group = p_para->calc_group;
+	ki = p_para->calc_ki;
+	kx = p_para->unit_calc_para.Kx;
+	ky = p_para->unit_calc_para.Ky;
+	ko = p_para->unit_calc_para.Co;
+	Ox = p_para->unit_calc_para.Ox;
+	Oy = p_para->unit_calc_para.Oy;
+	Ix = p_para->unit_calc_para.Ix;
+//	Iy = p_para->unit_calc_para.Iy;
+	
+	p_in = inX;
+	p_ou = outX;
+	p_wei_in = p_wei;
+	xmap = Ox*Oy;
+	wmap = ky*kx*ki;
+	
+	ASSERT(kx-n_group,"func_neuron_whole_oxy");
+
+	for(kidx =0; kidx < ko; kidx++)
+	{
+		p_in_y 		= p_in;
+		p_wei_co 	= p_wei_in;
+		p_ou_xy		= p_ou;
+		
+		p_wei_in 	+= wmap;
+		// p_in		+= 0; // not change
+		p_ou		+= xmap;
+		
+		for(oyidx=0; oyidx<Oy; oyidx++)
+		{
+			func_neuron_whole_kxiy(p_in_y, p_wei_co, p_ou_xy, n, n_group, kx, ki, ky);
+
+			// next input and weight
+			p_in_y += Ix;       
+			// p_wei_co += 0; // not change
+			p_ou_xy += Ox;
+		}
+	} // end kidx
+}
+
+
+// func_neuron_calc_cnn, do convlution,
+// stride = 1, not take the stride into accout,
+// inX: [C][Y][X], p_wei:[B][C][ky][kx], outX:[B][Oy][Ox]
+// outX should be initialized before this function called
+// would re-arrage inX and p_wei into weight[ky][ki/n][kx][n], inX[ky][ki/n][x][n], for n=8
+
+// func_neuron_organize, do organize, inX should be different with ouX, n=8
+// type:0, char, 1:float, 2:inverse char, 3:inverse float
+// input:[si][sy][sx], output:[sy][si/n][sx][n]
+void func_neuron_organize(void *inX, void*ouX, int type, int sx, int sy, int si, int n, int *calc_ki)
+{
+
+#if 0
+	char  *p_char;
+	char  *p_outc;
+	float *p_float;
+	float *p_outf;
+
+	uLint_t *p_conv_tbl;
+
+	int xidx, yidx, kidx,nidx,nsidx, nseg,nrem, ntot;
+	
+	if (n<1)
+	{
+		printf("In func_neuron_organize, parameter n should >=1, now is %d, debug\n",n);
+	}
+	nseg = si/n;
+	nrem = si%n;
+	ntot = n + nrem;
+	*calc_ki = ntot;
+
+	p_char = (char *)inX;
+	p_outc = (char *)ouX;
+	if (nrem > 0)
+	{
+		for(yidx=0;yidx<sy;yidx++)
+		{
+			for(nsidx=0; nsidx<nseg; nsidx++)
+			{
+				for(xidx=0; xidx<sx; xidx++)
+				{
+					for(nidx=0; nidx<n; nidx++)
+					{
+						p_outc[yidx*ntot*sx+nidx*sx*n+xidx*n+nidx] = p_char[(nsidx*n+nidx)*sy*sx+sy*yidx+xidx];
+					}
+				}
+			}
+		}
+	}
+	else
+	{
+		for(yidx=0;yidx<sy;yidx++)
+		{
+			for(nsidx=0; nsidx<nseg; nsidx++)
+			{
+				for(xidx=0; xidx<sx; xidx++)
+				{
+					for(nidx=0; nidx<n; nidx++)
+					{
+						p_outc[yidx*ntot*sx+nidx*sx*n+xidx*n+nidx] = p_char[(nsidx*n+nidx)*sy*sx+sy*yidx+xidx];
+					}
+				}
+			}
+		}
+	}
+
+#endif
+
+}
+
+void func_neuron_calc_cnn(char *inX, float*p_wei, float *outX, neu_unit_para *p_para)
+{
+#if 0
+	int kidx, oxidx,oyidx;
+	float *p_wei_in, *p_wei_co;
+	char *p_in, *p_in_y;
+	float *p_ou, *p_ou_xy;
+	int xmap,wmap;
+	int n, n_group, kx, ki, ky, ko, Ox,Oy, Ix,Iy;
+	
+	n = p_para->calc_n;
+	n_group = p_para->calc_group;
+	ki = p_para->calc_ki;
+	kx = p_para->unit_calc_para.Kx;
+	ky = p_para->unit_calc_para.Ky;
+	ko = p_para->unit_calc_para.Co;
+	Ox = p_para->unit_calc_para.Ox;
+	Oy = p_para->unit_calc_para.Oy;
+	Ix = p_para->unit_calc_para.Ix;
+	Iy = p_para->unit_calc_para.Iy;
+	
+
+	
+	p_in = inX;
+	p_ou = outX;
+	p_wei_in = p_wei;
+	xmap = Ox*Oy;
+	wmap = ky*kx*ki;
+	
+	ASSERT(kx-n_group,"func_neuron_whole_oxy");
+
+	for(kidx =0; kidx < ko; kidx++)
+	{
+		p_in_y 		= p_in;
+		p_wei_co 	= p_wei_in;
+		p_ou_xy		= p_ou;
+		
+		p_wei_in 	+= wmap;
+		// p_in		+= 0; // not change
+		p_ou		+= xmap;
+		
+		for(oyidx=0; oyidx<Oy; oyidx++)
+		{
+			func_neuron_whole_kxiy(p_in_y, p_wei_co, p_ou_xy, n, n_group, kx, ki, ky);
+
+			// next input and weight
+			p_in_y += Ix;       
+			// p_wei_co += 0; // not change
+			p_ou_xy += Ox;
+		}
+	} // end kidx
+#endif
+}
+
+neu_unit_para::neu_unit_para()
+{
+	init_flg= 0;
+}
+
+neu_unit_para::~neu_unit_para()
+{
+	if(init_flg != 0)
+	{
+		FREE_POINT(p_organize_tbl);
+
+	}
+
+}
+
+void neu_unit_para::neu_unit_para_int(void)
+{
+
+
+}
+
+
+void neu_unit_para::neu_unit_set_para(str_calc_para *p_para)
+{
+	memcpy(&unit_calc_para,p_para,sizeof(str_calc_para));
+	calc_n = 8;
+	calc_ki = (unit_calc_para.Ci + (calc_n-1)) / calc_n;
+
+}
+
+
+
 

@@ -9,7 +9,7 @@ int gbLoop = false;
 
 static void parse_opts(int argc, char* argv[])
 {
-	char* arg = NULL;
+//	char* arg = NULL;
 	int cmd = 0;
 	int opt_index = -1;
 
@@ -40,11 +40,11 @@ static void parse_opts(int argc, char* argv[])
 
 int main_4dvs(int argc, char* argv[])
 {
-	bool ret;
+//	bool ret;
 	int  flag;
 	STR_DVS_EVENT oneEvent;
 
-	int  count = 0;
+//	int  count = 0;
 
 	//parse the arguments
 	parse_opts(argc, argv);

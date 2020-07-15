@@ -4,6 +4,7 @@
 
 #include "stdio.h"
 #include "stdlib.h"
+#include "memory.h"
 
 #define ASSERT_DEBUG
 #ifdef ASSERT_DEBUG
@@ -83,7 +84,5 @@ typedef struct str_calc_para
 	uLint_t size_out;
 	char bias_en;
 } str_calc_para;
-
-
 
 #endif
