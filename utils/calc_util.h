@@ -67,26 +67,42 @@ class neu_unit_para
 	public:
 			
 		int init_flg;
-		LayerType neu_type;  // CNN,FCN,Pooling?
-		int calc_;
+		NeuCoreMode neu_mode;  //or MODE-A.B.C.D ??
+		int calc_type;			//0:valid, 1:same, 2:full, this time not support full and same
 		str_calc_para unit_calc_para;
-		int calc_n, calc_group, calc_ki; // here, using calc_n=8,  calc_group=4, for calculate 4 results using 32 MAC
+		int calc_n, calc_group, calc_ki,calc_ktot,calc_wei_tot,calc_x_ah,calc_y_ah; // here, using calc_n=8,  calc_group=4, for calculate 4 results using 32 MAC
+		int calc_ix,calc_iy,calc_ox,calc_oy; // not consider the strides
+		uLint_t calc_in_size, calc_inner_size, calc_out_size,calc_wei_size;
 		uLint_t *p_organize_tbl;
+		uLint_t *p_org_wei_tbl;
+		uLint_t calc_tbl_len;
 		uLint_t calc_time_count;			// counter as time used for this neuron process whole size
-		
+
+		char *p_in_buffer;
+		float *p_weight;
+		char *p_in_extend_buffer;	// for input extended	
+		float *p_inner_buffer;			// for output not considering stride
+		float *p_out_buffer;			// for final output
 		
 	public:
 		neu_unit_para();
 		~neu_unit_para();
+		void neu_release_buf();
+		void neu_unit_para_base_init(void);
 		void neu_unit_para_int(void);
-		void neu_unit_set_para(str_calc_para *p_para);
-		
+		void neu_unit_set_para(str_calc_para *p_para,int type, int n, int n_group, NeuCoreMode neu_md);
+		void neu_unit_calc_core(void *inX, void *outX);
+		void neu_unit_reorder_input(char *inX);
+		void neu_unit_reorder_weight(float *p_wei);
 } ;
 
 
 
 void test_rand(void);
 void test_spike_gen(void);
+void test_neu_core_calc(void);
+
+
 int func_val_pos_2int(char * va, int len);
 
 
@@ -103,6 +119,9 @@ void func_concat_pro(char *inX, float *ouX, str_calc_para *p_calc_para);
 void func_eltwise_pro(char *inX, float *ouX, str_calc_para *p_calc_para);
 
 void func_find_max(float *in, uLint_t n, uLint_t*midx, float* max_va);
+
+void func_neuron_whole_oxy(char *inX, float*p_wei, float *outX, neu_unit_para *p_para);
+
 
 
 #endif

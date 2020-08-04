@@ -20,6 +20,15 @@ void test_rand_16(int*out_pos, int out_len, char *mem_init, int mem_inv); // mem
 void test_rand_16_int(int*out_pos, int out_len, int seed_16, int mem_inv); // mem_inv,1:inv process
 void func_gen_poisson_one(int in_va,char *out_spike,rand_cla * p_LFSR_gen,rand_cla * p_LFSR_sca, int ratio);
 
+void func_gen_reorder_tbl(uLint_t *p_tbl, int sx, int sy, int si, int n, int *n_ki);
+
+#if 0
+#define print_cnn(format, ...) printf(format, ##__VA_ARGS__)
+#else
+#define print_cnn(format, ...) {}
+#endif
+
+
 rand_cla::rand_cla()
 {
 	int idx;
@@ -693,6 +702,7 @@ void func_fcn_spike_pro(char *inX, float *ouX, str_calc_para *p_calc_para)
 
 }
 
+// Note, in func_cnn_spike_pro, ouX should have been initialized
 void func_cnn_spike_pro(char *inX, float *ouX, str_calc_para *p_calc_para)
 {
 // in:Y*X*Ci, Ou:Y*X*Co, weight:Ky*Kx*Ci*Co
@@ -711,6 +721,12 @@ void func_cnn_spike_pro(char *inX, float *ouX, str_calc_para *p_calc_para)
 	p_co = ouX;
 	p_ko  = p_calc_para->p_weight;
 
+	#if 0		// for debug
+	printf("Parameters:in:[x,y,ci]:[%d,%d,%d],ker:[x,y,co]:[%d,%d,%d]\n",p_calc_para->Ix,p_calc_para->Iy,p_calc_para->Ci,
+		p_calc_para->Kx,p_calc_para->Ky,p_calc_para->Co);
+	printf("Parameters:out:[x,y]:[%d,%d],size_out:%lu\n",p_calc_para->Ox,p_calc_para->Oy,p_calc_para->size_out);
+	#endif
+	
 	#if (DEB_PRINT_NUM > 0)
 		// for debug more
 		float *p_tmp_o;
@@ -726,6 +742,8 @@ void func_cnn_spike_pro(char *inX, float *ouX, str_calc_para *p_calc_para)
 		{
 			p_tmp_o[i0]=0;
 		}
+
+		printf("debug func_cnn_spike_pro - 1\n");
 		
 		p_co = p_tmp_o;
 		for(ocidx=0; ocidx < p_calc_para->Co; ocidx++)
@@ -777,6 +795,10 @@ void func_cnn_spike_pro(char *inX, float *ouX, str_calc_para *p_calc_para)
 			p_ko += map_ker_a;
 			
 		}// end ocidx
+
+		
+		printf("debug func_cnn_spike_pro - 3\n");
+
 		for(uLint_t i0=0;i0<p_calc_para->size_out; i0++)
 		{
 			ouX[i0] +=p_tmp_o[i0];
@@ -1004,8 +1026,11 @@ void func_neuron_one_unit(char *inX, float*p_wei, float *outX, int n, int n_grou
 		sum0 = outX[gidx];
 		for(nidx=0; nidx<n; nidx++)
 		{
+			print_cnn("func_neuron_one_unit,[group,n,sum0-before]:[%d,%d,%f]\n",n_group,n,sum0);
 			if (p_in[nidx] != 0)
-				sum0 += p_wei[n];
+				sum0 += p_wei[nidx];
+
+			print_cnn("func_neuron_one_unit,[gidx,nidx,in,weight,sum0]:[%d,%d,%d,%f,%f]\n",gidx,nidx,p_in[nidx],p_wei[nidx],sum0);
 		}
 		outX[gidx] = sum0;
 		p_in += n;
@@ -1015,18 +1040,28 @@ void func_neuron_one_unit(char *inX, float*p_wei, float *outX, int n, int n_grou
 // func_neuron_one_kx, same as func_neuron_one_unit; kernel not change, while support more n_group
 // if more detail, n_group should be sliced every 4 groups as in func_neuron_one_unit
 // stride = 1, not take the stride into accout,
-void func_neuron_one_kx(char *inX, float*p_wei, float *outX, int n, int n_group)
+void func_neuron_one_kx(char *inX, float*p_wei, float *outX, int n, int n_group, int group_base)
 {
-	func_neuron_one_unit(inX, p_wei, outX, n, n_group);
+//	ASSERT2(n_group,group_base,"func_neuron_whole_kx");
+
+	// n_group should >= group_base, and then split to group_base, here not using this
+	if (n_group >group_base)
+	{
+		func_neuron_one_unit(inX, p_wei, outX, n, n_group);
+	}
+	else
+	{
+		func_neuron_one_unit(inX, p_wei, outX, n, n_group); // group<base,pad to zeros
+	}
 	
 }
 
 // func_neuron_whole_kx, fix channel_in direction, and loop the kx, while support more n_group
 // stride = 1, not take the stride into accout,
 // note, kernel weight buffer have been re-organized
-void func_neuron_whole_kx(char *inX, float*p_wei, float *outX, int n, int n_group, int kx)
+void func_neuron_whole_kx(char *inX, float*p_wei, float *outX, int n, int ix, int kx, int group_base)
 {
-	int kxidx;
+	int kxidx,kn;
 	float *p_wei_in;
 	char *p_in;
 	float *p_ou;
@@ -1035,21 +1070,37 @@ void func_neuron_whole_kx(char *inX, float*p_wei, float *outX, int n, int n_grou
 	p_ou = outX;
 	p_wei_in = p_wei;
 	
-	ASSERT(kx-n_group,"func_neuron_whole_kx");
+	ASSERT2(ix,kx,"func_neuron_whole_kx");
 
+	kn=ix-kx+1;
 	for (kxidx =0; kxidx < kx; kxidx++)
 	{
-		func_neuron_one_kx(p_in, p_wei_in, p_ou, n, (n_group - kxidx));
+		// for debug
+		print_cnn("func_neuron_whole_kx,kxidx:%d,toal:[ix,wei]=[%d,%d], X:\n",kxidx,ix,kx);
+		for(int i0= 0;i0<n*(ix - kxidx);i0++)
+		{
+			print_cnn("%d,",p_in[i0]);
+		}
+		print_cnn("\nfunc_neuron_whole_kx,Weight:\n");
+		for(int i0=0;i0<kx; i0++)
+		{
+			print_cnn("%f,",p_wei_in[i0]);
+		}
+		print_cnn("\n");
+		// end debug print
+			
+		func_neuron_one_kx(p_in, p_wei_in, p_ou, n,kn,group_base);
 		p_in += n;
 		p_wei_in += n;
+		
 	}
 	
 }
 
 // func_neuron_whole_kxi, fix channel_in direction, and loop the kx, the loop the ki 
 // stride = 1, not take the stride into accout,
-// note, kernel weight buffer have been re-organized,i.e., weight[ki/n][kx][n], inX[ki/n][x][n]
-void func_neuron_whole_kxi(char *inX, float*p_wei, float *outX, int n, int n_group, int kx, int ki)
+// note, kernel weight buffer have been re-organized,i.e., weight[ki][kx][n], inX[ki][x][n]
+void func_neuron_whole_kxi(char *inX, float*p_wei, float *outX, int n, int ix, int kx, int ki, int group_base)
 {
 	int kidx;
 	float *p_wei_in;
@@ -1060,14 +1111,28 @@ void func_neuron_whole_kxi(char *inX, float*p_wei, float *outX, int n, int n_gro
 	p_in = inX;
 	p_ou = outX;
 	p_wei_in = p_wei;
-	xmap = n*n_group;
+	xmap = n*ix;
 	wmap = n*kx;
 	
-	ASSERT(kx-n_group,"func_neuron_whole_kxi");
+	ASSERT2(ix,kx,"func_neuron_whole_kxi");
 
 	for (kidx =0; kidx < ki; kidx++)
 	{
-		func_neuron_whole_kx(p_in, p_wei_in, p_ou, n, n_group,kx);
+		// for debug
+		print_cnn("func_neuron_whole_kxi,kxidx:%d, X:\n",kidx);
+		for(int i0=0;i0<xmap;i0++)
+		{
+			print_cnn("%d,",p_in[i0]);
+		}
+		print_cnn("\nfunc_neuron_whole_kxi,Weight:\n");
+		for(int i0=0;i0<wmap; i0++)
+		{
+			print_cnn("%f,",p_wei_in[i0]);
+		}
+		print_cnn("\n");
+		// end debug print
+		
+		func_neuron_whole_kx(p_in, p_wei_in, p_ou, n, ix,kx,group_base);
 		p_in += xmap;
 		p_wei_in += wmap;
 	}
@@ -1077,8 +1142,8 @@ void func_neuron_whole_kxi(char *inX, float*p_wei, float *outX, int n, int n_gro
 
 // func_neuron_whole_kxiy, fix channel_in direction, and loop the kx, the loop the ki , finally the ky
 // stride = 1, not take the stride into accout,
-// note, kernel weight buffer have been re-organized,i.e., weight[ky][ki/n][kx][n], inX[ky][ki/n][x][n]
-void func_neuron_whole_kxiy(char *inX, float*p_wei, float *outX, int n, int n_group, int kx, int ki, int ky)
+// note, kernel weight buffer have been re-organized,i.e., weight[ky][ki][kx][n], inX[ky][ki][x][n]
+void func_neuron_whole_kxiy(char *inX, float*p_wei, float *outX, int n, int ix, int kx, int ki, int ky, int group_base)
 {
 	int kidx;
 	float *p_wei_in;
@@ -1089,14 +1154,28 @@ void func_neuron_whole_kxiy(char *inX, float*p_wei, float *outX, int n, int n_gr
 	p_in = inX;
 	p_ou = outX;
 	p_wei_in = p_wei;
-	xmap = n*n_group*ki;
+	xmap = n*ix*ki;
 	wmap = n*kx*ki;
 	
-	ASSERT(kx-n_group,"func_neuron_whole_kxiy");
+	ASSERT2(ix, kx,"func_neuron_whole_kxiy");
 
 	for (kidx =0; kidx < ky; kidx++)
 	{
-		func_neuron_whole_kxi(p_in, p_wei_in, p_ou, n, n_group,kx,ki);
+		// for debug
+		print_cnn("func_neuron_whole_kxiy,kxidx:%d, X:\n",kidx);
+		for(int i0=0;i0<xmap;i0++)
+		{
+			print_cnn("%d,",p_in[i0]);
+		}
+		print_cnn("\nfunc_neuron_whole_kxiy,Weight:\n");
+		for(int i0=0;i0<wmap; i0++)
+		{
+			print_cnn("%f,",p_wei_in[i0]);
+		}
+		print_cnn("\n");
+		// end debug print
+	
+		func_neuron_whole_kxi(p_in, p_wei_in, p_ou, n, ix,kx,ki,group_base);
 		p_in += xmap;
 		p_wei_in += wmap;
 	}
@@ -1119,25 +1198,29 @@ void func_neuron_whole_oxy(char *inX, float*p_wei, float *outX, neu_unit_para *p
 	float *p_ou, *p_ou_xy;
 	int xmap,wmap;
 	int n, n_group, kx, ki, ky, ko, Ox,Oy, Ix;
+	int Ix2,Ox2;
 //	int Iy;
 	n = p_para->calc_n;
 	n_group = p_para->calc_group;
 	ki = p_para->calc_ki;
+	Ix = p_para->calc_ix;
+	Ox = p_para->calc_ox;
+	Oy = p_para->calc_oy;
+	
 	kx = p_para->unit_calc_para.Kx;
 	ky = p_para->unit_calc_para.Ky;
 	ko = p_para->unit_calc_para.Co;
-	Ox = p_para->unit_calc_para.Ox;
-	Oy = p_para->unit_calc_para.Oy;
-	Ix = p_para->unit_calc_para.Ix;
-//	Iy = p_para->unit_calc_para.Iy;
 	
 	p_in = inX;
 	p_ou = outX;
 	p_wei_in = p_wei;
 	xmap = Ox*Oy;
-	wmap = ky*kx*ki;
+	wmap = ky*kx*ki*n;
+
+	Ix2 = Ix * n*ki;
+	Ox2 = Ox;
 	
-	ASSERT(kx-n_group,"func_neuron_whole_oxy");
+	ASSERT2(Ix,kx,"func_neuron_whole_oxy");
 
 	for(kidx =0; kidx < ko; kidx++)
 	{
@@ -1151,14 +1234,17 @@ void func_neuron_whole_oxy(char *inX, float*p_wei, float *outX, neu_unit_para *p
 		
 		for(oyidx=0; oyidx<Oy; oyidx++)
 		{
-			func_neuron_whole_kxiy(p_in_y, p_wei_co, p_ou_xy, n, n_group, kx, ki, ky);
+			print_cnn("func_neuron_whole_oxy,[kxidx,oyidx]:[%d/%d,%d/%d],Parameters,[Ix,n,ox,ki,group,Ix2]:[%d,%d,%d,%d,%d,%d], X:\n",kidx,ko,oyidx,Oy,Ix,n,Ox,ki,n_group,Ix2);
+			func_neuron_whole_kxiy(p_in_y, p_wei_co, p_ou_xy, n, Ix, kx, ki, ky,n_group);
 
 			// next input and weight
-			p_in_y += Ix;       
+			p_in_y += Ix2;       
 			// p_wei_co += 0; // not change
-			p_ou_xy += Ox;
+			p_ou_xy += Ox2;
 		}
 	} // end kidx
+
+	// output, need do stride??
 }
 
 
@@ -1261,7 +1347,7 @@ void func_neuron_calc_cnn(char *inX, float*p_wei, float *outX, neu_unit_para *p_
 	xmap = Ox*Oy;
 	wmap = ky*kx*ki;
 	
-	ASSERT(kx-n_group,"func_neuron_whole_oxy");
+	ASSERT2(kx,n_group,"func_neuron_whole_oxy");
 
 	for(kidx =0; kidx < ko; kidx++)
 	{
@@ -1288,34 +1374,780 @@ void func_neuron_calc_cnn(char *inX, float*p_wei, float *outX, neu_unit_para *p_
 
 neu_unit_para::neu_unit_para()
 {
-	init_flg= 0;
+	neu_unit_para_base_init();
 }
 
 neu_unit_para::~neu_unit_para()
 {
 	if(init_flg != 0)
 	{
-		FREE_POINT(p_organize_tbl);
-
+		neu_release_buf();
+		
+		init_flg = 0;
 	}
 
 }
 
+void neu_unit_para::neu_unit_para_base_init(void)
+{
+	init_flg= 0;
+	neu_unit_para_int();
+}
+
 void neu_unit_para::neu_unit_para_int(void)
 {
-
-
+	if(init_flg != 0)
+	{
+		neu_release_buf();
+		
+		init_flg = 0;
+	}
+	else
+	{
+		NULL_POINT(p_organize_tbl);
+		NULL_POINT(p_org_wei_tbl);
+		NULL_POINT(p_in_buffer);
+		NULL_POINT(p_weight);
+		NULL_POINT(p_in_extend_buffer);
+		NULL_POINT(p_inner_buffer);
+		NULL_POINT(p_out_buffer);
+	}
 }
 
-
-void neu_unit_para::neu_unit_set_para(str_calc_para *p_para)
+void neu_unit_para::neu_release_buf(void)
 {
+	FREE_POINT(p_organize_tbl);
+	FREE_POINT(p_org_wei_tbl);
+	FREE_POINT(p_in_buffer);
+	FREE_POINT(p_weight);
+	FREE_POINT(p_in_extend_buffer);
+	FREE_POINT(p_inner_buffer);
+	FREE_POINT(p_out_buffer);
+
+}
+
+void neu_unit_para::neu_unit_set_para(str_calc_para *p_para,int type, int n, int n_group, NeuCoreMode neu_md)
+{
+	printf("neu_unit_set_para begin\n");
+	neu_unit_para_int();
+
 	memcpy(&unit_calc_para,p_para,sizeof(str_calc_para));
-	calc_n = 8;
+	neu_mode 	= neu_md;
+	calc_type = type;
+	calc_x_ah = 0;
+	calc_y_ah = 0;
+	if (calc_type == 1) // same need exceed, this time not support 1 and 2, only support 0
+	{
+		calc_ix = unit_calc_para.Ix + unit_calc_para.Kx-1;
+		calc_iy = unit_calc_para.Iy + unit_calc_para.Ky-1;
+		calc_x_ah = unit_calc_para.Kx/2;
+		calc_y_ah = unit_calc_para.Ky/2;
+	}
+	else if (calc_type == 2) // full need exceed, this is not supported! 
+   {
+	   calc_ix = unit_calc_para.Ix + 2*(unit_calc_para.Kx-1);
+	   calc_iy = unit_calc_para.Iy + 2*(unit_calc_para.Ky-1);
+	   calc_x_ah = unit_calc_para.Kx-1;
+	   calc_y_ah = unit_calc_para.Ky-1;
+   }
+   else
+   {
+		calc_ix = unit_calc_para.Ix;
+		calc_iy = unit_calc_para.Iy;
+	}
+
+	if (n<1)
+	{
+		printf("In neu_unit_set_para, parameter n should >=1, now is %d, debug\n",n);
+		n = 8;
+	}	
+	
+	calc_ox = calc_ix - unit_calc_para.Kx+1;
+	calc_oy = calc_iy - unit_calc_para.Ky+1;
+
+	calc_n = n;
+	calc_group = n_group;
+	
 	calc_ki = (unit_calc_para.Ci + (calc_n-1)) / calc_n;
+	// calc_ktot should be equal to calc_ki*calc_n
+	calc_tbl_len = calc_ki*calc_n*calc_ix*calc_iy;
+	calc_wei_size = unit_calc_para.Kx*unit_calc_para.Ky*calc_ki*calc_n; //*unit_calc_para.Co;
+
+	calc_in_size = calc_ix*calc_iy*calc_ki*calc_n; // = calc_tbl_len
+	calc_inner_size = calc_ox*calc_oy*unit_calc_para.Co;
+	calc_out_size   = unit_calc_para.Ox*unit_calc_para.Oy*unit_calc_para.Co;
+	
+	p_organize_tbl 	= (uLint_t *)malloc(sizeof(uLint_t)*calc_tbl_len);
+	p_in_buffer 	= (char *)malloc(sizeof(char)*calc_in_size);
+	p_inner_buffer 	= (float *)malloc(sizeof(float)*calc_inner_size);
+	p_out_buffer 	= (float *)malloc(sizeof(float)*calc_out_size);
+	p_in_extend_buffer 	= (char *)malloc(sizeof(char)*calc_in_size);
+	p_weight 	= (float *)malloc(sizeof(float)*(calc_wei_size*unit_calc_para.Co));
+	p_org_wei_tbl 	= (uLint_t *)malloc(sizeof(uLint_t)*calc_wei_size);
+
+	if ((NULL == p_organize_tbl) || (NULL == p_in_buffer) || (NULL == p_inner_buffer)||(NULL == p_out_buffer) || (NULL==p_in_extend_buffer) || (NULL==p_org_wei_tbl))
+	{
+		printf("In,neu_unit_set_para,memory is not enough, debug\n Adderess: tble,tbl_wei, input,in_extend,inner,out=%p,%p,%p,%p,%p,%p\n",\
+			p_organize_tbl,p_org_wei_tbl,p_in_buffer,p_in_extend_buffer,p_inner_buffer,p_out_buffer);
+		neu_release_buf();
+		return;
+	}
+
+	printf("neu_unit_set_para End\n");
+
+	printf("neu_unit_set_para Input Table:\n");
+	func_gen_reorder_tbl(p_organize_tbl, calc_ix, calc_iy, unit_calc_para.Ci, calc_n, &calc_ktot);
+	if ((calc_ki*calc_n) != calc_ktot)
+	{
+		printf("neu_unit_set_para Input Table Error, debug:\n");
+	}
+	printf("neu_unit_set_para Weight Table:\n");
+	func_gen_reorder_tbl(p_org_wei_tbl, unit_calc_para.Kx, unit_calc_para.Ky, unit_calc_para.Ci, calc_n, &calc_wei_tot);
+	if ((calc_ki*calc_n) != calc_wei_tot)
+	{
+		printf("neu_unit_set_para Weight Table Error, debug:\n");
+	}
+	
+	// init memory
+	memset(p_in_buffer,0,sizeof(char)*calc_in_size);
+	memset(p_inner_buffer,0,sizeof(float)*calc_inner_size);
+	memset(p_out_buffer,0,sizeof(float)*calc_out_size);
+	memset(p_in_extend_buffer,0,sizeof(char)*calc_in_size);
+	
+	init_flg = 1;
+	
+	printf("neu_unit_set_para End\n");
+}
+
+// input:[si][sy][sx], output:[sy][si/n][sx][n]
+void neu_unit_para::neu_unit_reorder_input(char *inX)
+{
+	uLint_t idx;
+	char *p_in,*p_inner;
+	uLint_t *p_tbl;
+	
+	uLint_t real_in_len, rem_len;
+	real_in_len = calc_ix*calc_iy*unit_calc_para.Ci;
+	rem_len = calc_ix*calc_iy*(calc_ktot - unit_calc_para.Ci);
+
+	p_in = inX;
+	if ((calc_type == 1) || (calc_type == 2))  // same or full, actuallly not support
+	{
+		int xidx,yidx,cidx;
+		char *p_inner_x,*p_inner_y,*p_inner_c,*p_in_x,*p_in_y,*p_in_c;
+		uLint_t inner_xy, in_xy;
+		memset(p_in_extend_buffer,0,sizeof(char)*calc_in_size);
+		p_inner 	= p_in_extend_buffer;
+		inner_xy 	= calc_ix*calc_iy;
+		in_xy 		= unit_calc_para.Ix*unit_calc_para.Iy;
+
+
+		// ignore first and last calc_y_ah to padding, here example padding to zeros
+		#if 0
+		for(cidx=0;cidx<unit_calc_para.Ci;cidx++) // input:[si][sy][sx],
+		{
+			for(yidx=0;yidx<calc_y_ah;yidx++)
+			{
+				for(xidx=0;xidx<calc_ix;xidx++)
+				{
+					p_inner[cidx*inner_xy+yidx*calc_ix+xidx] = 0;
+				}
+
+			}
+			for(yidx=calc_y_ah+unit_calc_para.Iy;yidx<calc_iy;yidx++)
+			{
+				for(xidx=0;xidx<calc_ix;xidx++)
+				{
+					p_inner[cidx*inner_xy+yidx*calc_ix+xidx] = 0;
+				}
+
+			}
+		}
+		#endif
+		
+		p_inner = p_in_extend_buffer + calc_y_ah*calc_ix; 
+		for(cidx=0;cidx<unit_calc_para.Ci;cidx++) // input:[si][sy][sx],
+		{
+			p_in_c 		= p_in;
+			p_inner_c 	= p_inner;
+			p_inner		+= inner_xy;
+			p_in		+= in_xy;
+			
+			for(yidx=0;yidx<unit_calc_para.Iy;yidx++)
+			{
+				p_in_y 		= p_in_c;
+				p_inner_y 	= p_inner_c;
+				p_in_c 		+= unit_calc_para.Ix;
+				p_inner_c	+= calc_ix;
+				for(xidx=0;xidx<calc_x_ah;xidx++) // first calc_x_ah set to zeros
+				{
+					*p_inner_y = 0;
+					p_inner_y++;
+				}
+				p_inner_x = p_inner_y;
+				p_in_x	  = p_in_y;
+				p_inner_y += unit_calc_para.Ix;
+				for(xidx=0;xidx<unit_calc_para.Ix;xidx++)
+				{
+					p_inner_x[0] = p_in_x[0];
+					p_inner_x++;
+					p_in_x++;
+				}
+				for(;xidx<calc_ix;xidx++) // last calc_x_ah set to zeros
+				{
+					*p_inner_y = 0;
+					p_inner_y++;
+				}
+			}
+		}
+
+		// finally, set p_in to p_in_extend
+		p_in = p_in_extend_buffer;
+	}
+	else
+	{
+		if (unit_calc_para.Ci == calc_ktot)
+		{
+			p_in = inX;
+		}
+		else
+		{
+			// for debug, input reorder
+			print_cnn("In input reorder,parameters,[ci,calc_ktot,real_len,rem_len]:[%d,%d,%lu,%lu]\n",unit_calc_para.Ci,calc_ktot,real_in_len, rem_len);
+			
+			memset(&p_in_extend_buffer[real_in_len],0,sizeof(char)*rem_len);
+			memcpy(p_in_extend_buffer,inX,real_in_len);
+			p_in = p_in_extend_buffer;
+			
+			// for debug, input reorder, inner buf
+			print_cnn("In input reorder, inner buffer:\n");
+			for(idx=0;idx<calc_in_size;idx++)
+				print_cnn("%d ",p_in_extend_buffer[idx]);
+			print_cnn("\n");
+
+		}
+	}
+
+	// for debug, input reorder
+	print_cnn("In input reorder, data in:\n");
+	for(idx=0;idx<uLint_t(calc_ix*calc_iy*unit_calc_para.Ci);idx++)
+		print_cnn("%d ",inX[idx]);
+	print_cnn("\n");
+
+	
+	// do re-order
+	p_tbl = p_organize_tbl;
+	for(idx=0; idx<calc_in_size;idx++)
+	{
+		p_in_buffer[*p_tbl] = *p_in;
+		p_tbl++;
+		p_in++;
+	}
+
+	
+	// for debug, input reorder
+	print_cnn("After input reorder, data out:\n");
+	for(idx=0;idx<calc_in_size;idx++)
+		print_cnn("%d ",p_in_buffer[idx]);
+	print_cnn("\n");
+
+}
+
+// input:[co][si][ky][kx], output:[co][ky][si/n][kx][n]
+void neu_unit_para::neu_unit_reorder_weight(float *p_wei)
+{
+	uLint_t idx;
+	int coidx;
+	float *p_in,*p_inner;
+	float *p_in_c,*p_inner_c;
+	uLint_t *p_tbl;
+	uLint_t inner_xy, in_xy, inner_xyc, in_xyc;
+	p_in 	= p_wei;
+	p_inner = p_weight;
+	inner_xy	= unit_calc_para.Kx*unit_calc_para.Ky; // Kx should <= unit_calc_para.Ix and same for Y
+	in_xy		= inner_xy;
+	inner_xyc	= inner_xy * calc_ktot;
+	in_xyc		= in_xy * unit_calc_para.Ci;
+	
+	print_cnn("Debug in neu_unit_reorder_weight,[Ci,calc_wei_tot]:=[%d,%d]\n",unit_calc_para.Ci,calc_wei_tot);
+	
+	if (unit_calc_para.Ci != calc_wei_tot)
+	{
+		for(coidx=0; coidx<unit_calc_para.Co; coidx++)
+		{
+			p_tbl = p_org_wei_tbl;
+			p_inner_c = p_inner;
+			p_inner += inner_xyc; // += calc_wei_size;
+			p_in_c	 = p_in;
+			p_in 	+= in_xyc;
+
+			// first, set all to zeros
+			for(idx=0; idx<inner_xyc;idx++)
+			{
+				p_inner_c[idx] = 0;
+			}
+
+			// reorder
+			for(idx=0; idx<in_xyc;idx++)
+			{
+				p_inner_c[*p_tbl] = *p_in_c;
+				p_tbl++;
+				p_in_c++;
+			}
+			
+		}
+	}
+	else
+	{
+		// do re-order
+		p_tbl = p_org_wei_tbl;
+		p_in = p_wei;
+		p_inner = p_weight;
+		for(coidx=0; coidx<unit_calc_para.Co; coidx++)
+		{
+			p_tbl = p_org_wei_tbl;
+			p_inner_c = p_inner;
+			p_inner += inner_xyc; // += calc_wei_size;
+			p_in_c	 = p_in;
+			p_in 	+= in_xyc;
+			for(idx=0; idx<in_xyc;idx++) // in_xyc = inner_xyc = calc_wei_size
+			{
+				// debug
+				print_cnn("Weight re-order,[co,idx,tbl,in]:[%d,%lu,%lu,%f]\n",coidx,idx,*p_tbl,*p_in_c);
+			
+				p_inner_c[*p_tbl] = *p_in_c;
+				p_tbl++;
+				p_in_c++;
+			}
+			
+			// debug
+			for(idx=0; idx<in_xyc;idx++) // in_xyc = inner_xyc = calc_wei_size
+			{
+				print_cnn("Weight re-order,out,[idx,out_va]:[%lu,%f]\n",idx,p_inner_c[idx]);
+			}
+		}
+	}
+}
+
+void neu_unit_para::neu_unit_calc_core(void *inX, void *outX)
+{
+	float *p_inf, *p_ouf,*p_wei;
+	char  *p_inc;
+	// first, parameters should have been inited 
+	// weight has been initialized outside the function
+
+	// then re-order the data
+	if (neu_mode == NEU_MODE_A)
+	{
+		p_inc = (char *)inX;
+		neu_unit_reorder_input(p_inc);
+		p_inc = p_in_buffer;
+		p_wei = p_weight;
+		p_ouf = p_out_buffer;
+		// do calculate
+		func_neuron_whole_oxy(p_inc, p_wei, p_ouf, this);
+
+		// copy to outX
+		p_ouf = (float *)outX;
+		for(uLint_t idx=0; idx<calc_out_size; idx++)
+		{
+			p_ouf[idx] = p_out_buffer[idx];
+		}
+	}
+	else
+	{
+		p_inf = (float *)inX;
+		printf("In neu_unit_calc_core, Current Not supported, mode=%d, inX Addr = %p\n",neu_mode,p_inf);
+	}
+
+	// output
 
 }
 
 
+// func_neuron_organize, do organize, inX should be different with ouX, n=8
+// type:0, char, 1:float, 2:inverse char, 3:inverse float
+// input:[si][sy][sx], output:[sy][si/n][sx][n]
+#define DEB_REORD_TBL	1
+void func_gen_reorder_tbl(uLint_t *p_tbl, int sx, int sy, int si, int n, int *n_ki)
+{
+	int xidx, yidx, nidx,nsidx, nseg,nrem, ntot;
+	uLint_t *p_tmp;
+	uLint_t ad_y, ad_seg, ad_x, ad_xy;
+	uLint_t ord_y, ord_seg, ord_x, ord_xy;
+	uLint_t xy,nx, nxy;
+	nseg = si/n;
+	nrem = si%n;
+	ntot = (nrem==0)?si:((nseg+1)*n);
+	*n_ki = ntot;
+	p_tmp = p_tbl;
+#if (1 == DEB_REORD_TBL)
+	int test_flg;
+	test_flg = 1;
+	print_cnn("In func_gen_reorder_tbl, table test start\n");
+#endif
 
+	if (nrem > 0)
+	{
+		for(yidx=0;yidx<sy;yidx++)
+		{
+			for(nsidx=0; nsidx<nseg; nsidx++)
+			{
+				for(xidx=0; xidx<sx; xidx++)
+				{
+					for(nidx=0; nidx<n; nidx++)
+					{
+						// // input:[si][sy][sx], output:[sy][si/n][sx][n], si=ntot=nseg*n
+						p_tmp[(nsidx*n+nidx)*sy*sx+sx*yidx+xidx] = yidx*ntot*sx+nsidx*sx*n+xidx*n+nidx;
+					}
+				}
+			}
+			nsidx = nseg;
+			{
+				for(xidx=0; xidx<sx; xidx++)
+				{
+					for(nidx=0; nidx<nrem; nidx++)
+					{
+						p_tmp[(nsidx*n+nidx)*sy*sx+sx*yidx+xidx] = yidx*ntot*sx+nsidx*sx*n+xidx*n+nidx;
+					}
+					for(nidx=nrem; nidx<n; nidx++)
+					{
+						p_tmp[(nsidx*n+nidx)*sy*sx+sx*yidx+xidx] = yidx*ntot*sx+nsidx*sx*n+xidx*n+nidx;
+					}
+				}
+			}
+			
+		}
+#if (1 ==  DEB_REORD_TBL)
+		// compare, for debug
+		print_cnn("Reorder Table debug -2,parameters [sx, sy, si, n,ntot,nseg,nrem]:[%d,%d,%d,%d,%d,%d,%d]\n",sx, sy, si, n,ntot,nseg,nrem);
+		uLint_t pdidx,pdidx2;
+		pdidx2 = 0;
+		for(yidx=0;yidx<sy;yidx++)
+		{
+			for(nsidx=0; nsidx<=nseg; nsidx++)
+			{
+				for(xidx=0; xidx<sx; xidx++)
+				{
+					for(nidx=0; nidx<n; nidx++)
+					{
+						pdidx = yidx*ntot*sx+nsidx*sx*n+xidx*n+nidx;
+						if (pdidx != pdidx2 )
+						{
+							print_cnn("Error func_gen_reorder_tbl, idx not match, get %lu while need %lu, DEBUG \n",pdidx, pdidx2);
+						}
+						print_cnn("%lu ",p_tbl[pdidx]);
+						if ((pdidx % 10 )== 9)
+							print_cnn("\n");
+						print_cnn("\n");
+
+						pdidx2++;
+					}
+				}
+			}
+		}
+		print_cnn("Reorder Table debug -2 End\n");
+
+#endif
+
+		
+	}
+	else 	// input:[si][sy][sx], output:[sy][si/n][sx][n], si=ntot=nseg*n
+	{
+		ord_y = 0;
+		xy 	= sx*sy;
+		nx = n*sx;
+		nxy = n*xy;
+		ad_y = 0;
+
+		#if (1 == DEB_REORD_TBL)
+		// for test
+		uLint_t *p_test_tbl;
+		uLint_t tbl_test_len;
+		tbl_test_len = ntot*sx*sy;
+		p_test_tbl = (uLint_t *)malloc(sizeof(uLint_t)*tbl_test_len);
+		#endif
+		
+		for(yidx=0;yidx<sy;yidx++)
+		{
+			ord_seg = ord_y;  // output
+			ord_y 	+=  ntot*sx;
+			ad_seg   = ad_y; // input-index
+			ad_y	+= sx;
+			for(nsidx=0; nsidx<nseg; nsidx++)
+			{
+				ord_x = ord_seg;
+				ord_seg	+= nx;
+				ad_x   = ad_seg;
+				ad_seg += nxy;
+				for(xidx=0; xidx<sx; xidx++)
+				{
+					ord_xy = ord_x; // output
+					ord_x += n;
+					ad_xy  = ad_x;  // input-index
+					ad_x  += 1;
+					p_tmp = &p_tbl[ad_xy];
+					for(nidx=0; nidx<n; nidx++)
+					{
+						p_tmp[0] = ord_xy;  // output
+						ord_xy += 1;
+						p_tmp  += xy;        // input-index
+						// // input:[si][sy][sx], output:[sy][si/n][sx][n], si=ntot=nseg*n
+						//p_tbl[ (nsidx*n+nidx)*sy*sx+sx*yidx+xidx]=  yidx*ntot*sx+nsidx*sx*n+xidx*n+nidx;
+						p_test_tbl[ (nsidx*n+nidx)*sy*sx+sx*yidx+xidx]=  yidx*ntot*sx+nsidx*sx*n+xidx*n+nidx;
+					}
+				}
+			}
+		}
+
+		#if (1 ==  DEB_REORD_TBL)
+		// compare, for debug
+		print_cnn("Reorder Table debug,parameters [sx, sy, si, n]:[%d,%d,%d,%d]\n",sx, sy, si, n);
+		for(uLint_t tidx=0; tidx<tbl_test_len; tidx++)
+		{
+			if ((p_test_tbl[tidx] - p_tbl[tidx]) != 0)
+			{
+				test_flg = 0;
+				print_cnn("In func_gen_reorder_tbl, table not correct, debug, idx=%lu,test_tbl:%lu, tbl2:%lu\n",tidx,p_test_tbl[tidx],p_tbl[tidx]);
+				break;
+			}
+			print_cnn("%lu ",p_test_tbl[tidx]);
+			if ((tidx % 10 )== 9)
+				print_cnn("\n");
+			print_cnn("\n");
+		}
+		print_cnn("Reorder Table debug End\n");
+
+		FREE_POINT(p_test_tbl);
+		#endif
+		
+	}	
+	
+	#if (1 ==  DEB_REORD_TBL)
+	if (test_flg == 1)
+	{
+		print_cnn("In func_gen_reorder_tbl, table test SUCCESS!\n");
+	}
+	#endif
+}
+
+
+///////////// A Test Example
+ 
+#define CI_TEST 	(7)
+#define CO_TEST 	(11)
+#define IX_TEST 	(16)
+#define IY_TEST 	(16)
+#define KX_TEST 	(3)
+#define KY_TEST 	(3)
+#define OX_TEST 	(IX_TEST-KX_TEST+1)
+#define OY_TEST 	(IY_TEST-KY_TEST+1)
+			
+void test_neu_core_calc(void)
+{
+	neu_unit_para *p_test_neu_core;
+
+	p_test_neu_core = (neu_unit_para *)malloc(sizeof(neu_unit_para));
+	if (NULL == p_test_neu_core)
+	{
+		printf("Error in test_neu_core_calc, could not malloc neu_unit_para for test, debug\n");
+		return;
+	}
+	p_test_neu_core->neu_unit_para_base_init();
+	
+	str_calc_para calc_para0;
+	int clac_type; //0:valid, 1:same, 2:full
+	int calc_n,calc_ci,calc_co;
+	int calc_group;
+	int cidx,xidx,yidx,coidx;
+	
+	NeuCoreMode neu_mode;  // 
+	neu_mode = NEU_MODE_A;
+	calc_n = 9;
+	calc_ci = CI_TEST;
+	calc_co = CO_TEST;
+	calc_group = 5;
+	clac_type = 0;
+	calc_para0.Ci = calc_ci;
+	calc_para0.Co = calc_co;
+	calc_para0.Ix = IX_TEST;
+	calc_para0.Iy = IY_TEST;
+	calc_para0.Ox = OX_TEST;
+	calc_para0.Oy = OY_TEST;
+	calc_para0.Kx = KX_TEST;
+	calc_para0.Ky = KY_TEST;
+	calc_para0.stride_x = 1;
+	calc_para0.stride_y = 1;
+	calc_para0.bias_en	= 0;
+	calc_para0.size_out	= calc_para0.Ox*calc_para0.Oy*calc_para0.Co;
+
+
+		char out_pos[5] = {10,11,12,13,14};
+		int out_len = 1;
+	
+		int seed_16 = 0x0B6A9;
+		rand_cla rand_ker;
+		char rand_out[16];
+		int mem_data,pos_data;
+		
+		rand_ker.rand_config_pos(out_len,out_pos);
+		rand_ker.rand_sta_set_int(seed_16,0);
+
+
+		
+
+	// init test-data,[si][sy][sx]
+	char in_buffer[CI_TEST][IY_TEST][IX_TEST];
+	for(cidx=0; cidx<calc_para0.Ci; cidx++)
+	{
+		for(yidx=0; yidx<calc_para0.Iy; yidx++)
+		{
+			for(xidx=0; xidx<calc_para0.Ix; xidx++)
+			{
+//				in_buffer[cidx][yidx][xidx] = (cidx+yidx+xidx)&0x0001;
+				rand_ker.rand_pro(rand_out);
+				rand_ker.rand_read_mem_data(&mem_data, &pos_data);
+				in_buffer[cidx][yidx][xidx] = pos_data & 0x0001;
+			}
+		}
+	}
+
+	// init output-data
+	float out_buffer[CO_TEST][OY_TEST][OX_TEST];
+	for(cidx=0; cidx<calc_para0.Co; cidx++)
+	{
+		for(yidx=0; yidx<calc_para0.Oy; yidx++)
+		{
+			for(xidx=0; xidx<calc_para0.Ox; xidx++)
+			{
+				out_buffer[cidx][yidx][xidx] = 0;
+			}
+		}
+	}
+
+	// init kernel
+	float ker_buffer[CO_TEST][CI_TEST][KY_TEST][KX_TEST];
+	for(coidx=0; coidx<calc_para0.Co; coidx++)
+	{
+		for(cidx=0; cidx<calc_para0.Ci; cidx++)
+		{
+			for(yidx=0; yidx<calc_para0.Ky; yidx++)
+			{
+				for(xidx=0; xidx<calc_para0.Kx; xidx++)
+				{
+					ker_buffer[coidx][cidx][yidx][xidx] = ((coidx*calc_para0.Ci+cidx)*calc_para0.Ky+yidx)*calc_para0.Kx+xidx;
+				}
+			}
+		}
+	}
+	
+	calc_para0.p_weight = &ker_buffer[0][0][0][0];
+	calc_para0.p_bias	= NULL;
+	calc_para0.bias_en	= 0;
+	p_test_neu_core->neu_unit_set_para(&calc_para0,clac_type, calc_n, calc_group,neu_mode);
+
+
+	// get expected data
+	float out_buffer2[CO_TEST][OY_TEST][OX_TEST];
+	uLint_t erridx =0;
+	int errnum = 0;
+	
+	print_cnn("In test_neu_core_calc, get expected data\n");
+	memset(out_buffer2,0,sizeof(float)*CO_TEST*OY_TEST*OX_TEST);
+	func_cnn_spike_pro(&in_buffer[0][0][0], &out_buffer2[0][0][0], &calc_para0);
+	// End get expected data
+
+
+
+	// do weight organize
+	print_cnn("In test_neu_core_calc, re-order weight Start\n");
+	p_test_neu_core->neu_unit_reorder_weight(&ker_buffer[0][0][0][0]);
+
+	// debug print weight
+	print_cnn("Debug,Input before re-order:\n");
+	print_cnn("[ci,y,x,input]\n");
+		for(cidx=0; cidx<calc_para0.Ci; cidx++)
+		{
+			for(yidx=0; yidx<calc_para0.Iy; yidx++)
+			{
+				for(xidx=0; xidx<calc_para0.Ix; xidx++)
+				{
+					print_cnn("%d ",in_buffer[cidx][yidx][xidx]);
+				}
+				print_cnn("\n");
+			}
+		}
+
+
+	print_cnn("Debug,weight before re-order:\n");
+	for(coidx=0; coidx<calc_para0.Co; coidx++)
+	{
+		for(cidx=0; cidx<calc_para0.Ci; cidx++)
+		{
+			for(yidx=0; yidx<calc_para0.Ky; yidx++)
+			{
+				for(xidx=0; xidx<calc_para0.Kx; xidx++)
+				{
+					print_cnn("[co,ci,y,x,wei]:[%d,%d,%d,%d,%f]\n",coidx,cidx,yidx,xidx,ker_buffer[coidx][cidx][yidx][xidx]);
+				}
+			}
+		}
+	}
+	print_cnn("Debug,weight after re-order,parameter,[co,wei_size]:[%d,%lu]\n",calc_para0.Co,p_test_neu_core->calc_wei_size);
+	for(coidx=0; coidx<calc_para0.Co; coidx++)
+	{
+		for(uLint_t i0=0; i0<p_test_neu_core->calc_wei_size;i0++)
+		{
+			print_cnn("[co,ci,wei_out]:[%d,%lu,%f]\n",coidx,i0,p_test_neu_core->p_weight[coidx*p_test_neu_core->calc_wei_size+i0]);
+		}
+	}
+	
+	print_cnn("In test_neu_core_calc, re-order weight End\n");
+	// End debug print weight
+
+	// do calculate
+	print_cnn("In test_neu_core_calc,Calculate Start\n");
+	p_test_neu_core->neu_unit_calc_core(in_buffer,out_buffer);
+	print_cnn("In test_neu_core_calc,Calculate End\n");
+
+
+	// for debug
+	print_cnn("In test_neu_core_calc, get expected data\n");
+	memset(out_buffer2,0,sizeof(float)*CO_TEST*OY_TEST*OX_TEST);
+	func_cnn_spike_pro(&in_buffer[0][0][0], &out_buffer2[0][0][0], &calc_para0);
+
+
+	// do compare
+	
+	print_cnn("In test_neu_core_calc, Test Start\n");
+	
+
+	
+	print_cnn("In test_neu_core_calc, now compare ...\n");
+	for(coidx=0; coidx<calc_para0.Co; coidx++)
+	{
+			for(yidx=0; yidx<calc_para0.Oy; yidx++)
+			{
+				for(xidx=0; xidx<calc_para0.Ox; xidx++)
+				{
+					if (ABS(out_buffer2[coidx][yidx][xidx]-out_buffer[coidx][yidx][xidx])>1e-4)
+					{
+						errnum++;
+						erridx = coidx*(calc_para0.Ox*calc_para0.Oy)+yidx*(calc_para0.Ox)+xidx;
+						printf("Error,not match,idx:%lu,[%d,%d,%d],calc:%f, expected:%f\n",erridx,coidx,yidx,xidx,out_buffer[coidx][yidx][xidx],out_buffer2[coidx][yidx][xidx]);
+					}
+
+					printf("output:[%d,%d,%d],results:%f,expected:%f\n",coidx,yidx,xidx,out_buffer[coidx][yidx][xidx],out_buffer2[coidx][yidx][xidx]);
+				}
+			}
+
+	}
+	if (errnum == 0)
+	{
+		printf("In test_neu_core_calc, Test PASS\n");
+	}
+
+
+	FREE_POINT(p_test_neu_core);
+}
 

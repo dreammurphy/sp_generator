@@ -8,10 +8,13 @@
 
 #define ASSERT_DEBUG
 #ifdef ASSERT_DEBUG
-#define ASSERT(cond,pr_str) {if (cond) printf("Shold Not Occur this, do debug");}
+#define ASSERT(cond,pr_str) {if (cond) printf("In %s Shold Not Occur this, do debug\n",(pr_str));}
+#define ASSERT2(big,sma,pr_str) {if ((big)<(sma)) printf("In %s Shold Not Occur this,big=%d,small=%d, do debug\n",(pr_str),(big),(sma));}
 #else
 #define ASSERT(cond,pr_str)  {}
 #endif
+
+#define ABS(a) (((a)>=0)?(a):(-a))
 
 #define SUCCESS						(1)
 #define FAIL						(0)
@@ -44,12 +47,23 @@ typedef enum
 
 } LayerType;
 
+typedef enum
+{
+    NEU_MODE_A = 0,
+    NEU_MODE_B,
+	NEU_MODE_C,
+    NEU_MODE_D,
+    NEU_MODE_OTHERS
+
+}NeuCoreMode;
+
+
 typedef unsigned long int uLint_t;
 typedef unsigned int uint_t;
 
 
 #define FREE_POINT(p)  {if (NULL != (p)) {free((p)); (p)=NULL;}}
-
+#define NULL_POINT(p)   {(p)=NULL;}
 
 
 /* str_data_para: Origin Data */

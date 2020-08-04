@@ -218,6 +218,8 @@ void test_dvs2frame(void) // an example
 	int * p_dvs_frame_buf;
 	int sidx; // for save
 	FILE *fp_save;
+	
+	printf("In test_dvs2frame, test begin\n");
 
 	size_x = 128;
 	size_y = 128;
@@ -305,6 +307,8 @@ void test_dvs2frame(void) // an example
 	
 	FREE_POINT(p_test_dvs);
 	FREE_POINT(p_dvs_frame_buf);
+	
+	printf("In test_dvs2frame, test End\n");
 
 }
 
